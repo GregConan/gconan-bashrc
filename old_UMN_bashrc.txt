@@ -1,0 +1,197 @@
+# .bashrc startup script for login shells
+
+
+# Shortcut aliases
+alias ll="ls -l";
+
+
+# Shortcut functions
+
+mygroups(){
+        echo $(id -nG);
+}
+
+status(){
+        act_txt="$(sacct)";
+        q_txt="$(squeue -al | grep $(id -un))";
+        header_txt="\n| QUEUED | PENDING | RUNNING | CANCELLED | FAILED | SUCCEEDED |\n+--------+---------+---------+-----------+--------+-----------+\n| %6s | %7s | %7s | %9s | %6s | %9s |\n\n";
+        printf "${header_txt}" \
+                "$(echo "$q_txt" | grep -v '' | wc -l)" \
+                "$(($(get_n_sacct_jobs "$act_txt" PENDING)+$(get_n_sacct_jobs "$act_txt" REVOKED)+$(echo "$q_txt" | grep 'REVOKED' | wc -l)))" \
+                "$(get_n_sacct_jobs "$act_txt" RUNNING)" \
+                "$(get_n_sacct_jobs "$act_txt" CANCELLED)" \
+                "$(($(get_n_sacct_jobs "$act_txt" FAILED)+$(get_n_sacct_jobs "$act_txt" OUT_OF_ME)+$(get_n_sacct_jobs "$act_txt" TIMEOUT)))" \
+                "$(get_n_sacct_jobs "$act_txt" COMPLETED)";
+}
+
+datetime(){
+        export today=$(date +"%Y-%m-%d");
+        export now=$(date +"%H-%M");
+        export nowseconds=$(date +"%s");
+}
+
+function get_n_sacct_jobs() {
+        act_txt="${1}";
+        title=${2};
+        echo "$act_txt" | grep $title | grep -v -F .ba+ | grep -v -F .ex+ | grep -v -F .b+ | grep -v -F .e+ | grep -v -F .0 | wc -l
+}
+
+homepath() {
+        if [ $# -ne 0 ]; then
+                for eacharg in "$@"; do
+                        if [ -f $eacharg ]  || [ -d $eacharg ]; then
+                                homepath_convert $eacharg
+                        else
+                                echo "Error: ${eacharg} not found." >> /dev/stderr;
+                        fi
+                done
+        else
+                homepath_convert ${PWD};
+        fi
+}
+
+homepath_convert() {
+        inpath=${1};
+        abs_inpath=$(realpath ${inpath});
+        if [ "$(echo $abs_inpath | grep /panfs/ | grep /groups/)" = ""  ]; then
+                echo $abs_inpath
+        else
+                echo /home/${abs_inpath#*/panfs/*/groups/?/};
+        fi
+}
+
+findblanks() {  # Print the line number(s) of blank line(s) in a file
+        grep -E --line-number --with-filename '^\s*$' $1
+}
+
+remember() {  # Search through my entire command history
+        touch ~/.history.txt
+
+        # Default values for input arguments
+        to_show=10;     # -n
+        to_check=50000; # -d
+        search_for=();  # List of terms to search through command history for
+        filter_out=();  # List of terms to exclude from search results
+        search_fn=$(which tail)  # By default, show the NEWEST (MOST RECENT) commands
+
+        # Help/usage message to explain this function to the user
+        help_msg="Usage: remember SEARCH_TERM_1 [SEARCH_TERM_2...] -x EXCLUDE_TERM_1 [-x EXCLUDE_TERM_2...] [-n lines] [-d depth] [-i]
+Search through entire command history to find specific term(s) in past commands,
+and then echo the most recent commands using the term(s).
+Options:
+        -d, --depth:            Number of commands in command history to check. Default: ${to_check}
+        -i, --initial, --head:  Include this flag to search OLDEST commands. Otherwise, will search NEWEST.
+        -n, --lines:            Number of lines to echo in output. Default: ${to_show}
+        -x, --not, --exclude:   Search term(s) to filter out.
+";
+
+        # If user gave no input arguments, then show the help message and exit
+        if [ ${#} -eq 0 ]; then
+                echo "${help_msg}";
+                return 1;
+        fi
+
+        # Otherwise, collect and organize all input arguments
+        while [ "${1}" != "" ]; do
+                case ${1} in
+                -n | --lines)  # Number of results to echo in output
+                        shift
+                        to_show=${1}
+                        ;;
+                -d | --depth)  # Number of commands in history to check
+                        shift
+                        to_check=${1}
+                        ;;
+                -v | -x | --exclude) # Term to exclude from search results
+                        shift
+                        filter_out=(${filter_out[@]} "${1}");
+                        ;;
+                -i | --initial | --head)  # Show OLDEST commands
+                        search_fn=$(which head)
+                        ;;
+                -h | --help)
+                        echo "${help_msg}";
+                        return 1
+                        ;;
+                *)
+                        search_for=(${search_for[@]} "${1}");
+                esac
+                shift
+        done
+
+        # Type validation: Ensure that -n and -d are integers
+        for eachinput in $to_show $to_check; do
+                if ! $(is_valid_whole_number $eachinput); then
+                        echo "Error: ${eachinput} is not a positive integer." >> /dev/stderr;
+                        return 1;
+                fi
+        done
+
+        # Get contents of command-history text file
+        search_cmd="${search_fn} $(homepath ~)/.history.txt -n ${to_check}"
+
+        # Filter for each search term
+        for each_term in ${search_for[@]}; do
+                search_cmd="${search_cmd} | grep ${each_term}";
+        done
+
+        # Filter out each excluded search term
+        for exclude_term in ${filter_out[@]}; do
+                search_cmd="${search_cmd} | grep -v ${exclude_term}";
+        done
+
+        # Display the result
+        search_cmd="${search_cmd} | ${search_fn} -n ${to_show}"
+        eval ${search_cmd}
+}
+
+is_valid_whole_number() {  # Test whether a given input is a positive integer
+        [[ "${1}" =~ ^[0-9]+$ ]]; return ${?};
+}
+
+lines() {  # Count how many lines are in some file(s)
+        if [ $# -eq 1 ]; then
+                cat $1 | wc -l
+        else
+                for eacharg in "$@"; do
+                        if [ -f $eacharg ]; then
+                                echo "$(cat $eacharg | wc -l) lines in ${eacharg}";
+                        else
+                                echo "Error: No readable file found at ${eacharg}" >> /dev/stderr;
+                        fi
+                done
+        fi
+}
+
+lll() {  # Show how many files/dirs/etc are in the current (or given) directory
+        if [ $# -eq 0 ]; then
+                dirpath=${PWD};
+        else
+                dirpath=${1};
+        fi
+
+        # Use Feczko's readdir command to get the amount quickly
+        amount=$(($(/home/feczk001/shared/code/internal/utilities/ReadDir/read_dir.pl $dirpath 2>&1 | wc -l) + 1));
+
+        # For a small amount, just use LS, especially because using readdir cannot distinguish 0 and 1
+        if [ $amount -lt 50 ]; then
+                amount=$(ls $dirpath | wc -l);
+        fi
+        echo $amount
+}
+
+statuses() { # Run the 'status' shortcut function at regular intervals forever (until user Ctrl-C's)
+        if [ "" == "$1" ]; then
+                tosleep=30;
+        else
+                tosleep=$1;
+        fi
+        while [ TRUE ]; do status; sleep $tosleep; done;
+}
+
+uniques() {  # Given a text file, only return the unique lines; do not sort. From stackoverflow.com/a/618454
+        cat $1 | perl -ne 'if (!defined $x{$_}) { print $_; $x{$_} = 1; }'
+}
+
+# Automatically save every command into a text file to save history. Necessary for 'remember' function
+PROMPT_COMMAND='echo "$(date +"%Y-%m-%d %H:%M") $(history | tail -n 1)" >> ~/.history.txt'
