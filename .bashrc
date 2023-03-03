@@ -177,6 +177,14 @@ datetime(){
         export nowseconds=$(date +"%s");
 }
 
+decrypt(){
+	bash ~/.decrypt.sh ${@};
+}
+
+encrypt(){
+	bash ~/.encrypt.sh ${@};
+}
+
 escape_special_chars() {
         sed -E 's| |\\ |g' "${@}" | sed 's|(|\\(|g' | sed 's|)|\\)|g'; # 's| |\\ |g';
 }
