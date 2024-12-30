@@ -849,6 +849,59 @@ mygroups(){
 	echo $(id -nG);
 }
 
+poetry_activate(){  # Activate a Python-Poetry virtual environment
+	case $# in 
+		1)
+			# Ensure that only 1 input argument is given; otherwise show usage
+			;;
+		*)
+			echo "Usage: poetry_activate [Python Poetry project/environment name]
+Activates an existing Python-Poetry project and its virtual environment.";
+			return 0
+			;;
+	esac
+	local virtual_envs="${HOME}/.cache/pypoetry/virtualenvs";
+	local venvs_found_msg="python-poetry virtual environment(s) called '${1}' found in the '${virtual_envs}' directory";
+	local activators=($(ls ${virtual_envs}/*${1}*-????????-py3.??/bin/activate));
+	local n_activators=${#activators[@]};
+	case ${n_activators} in
+		0)
+			echo "Error: No ${venvs_found_msg}." 1>&2;
+			return 1
+			;;
+		1)
+			poetry_activate_venv "${activators}"
+			;;
+		*)
+			echo "Multiple ${venvs_found_msg}:";
+			for ((i=0;i<n_activators;i++)); do
+				echo "[$((i+1))]: ${activators[${i}]}";
+			done
+
+			echo -n "Enter the number of the environment to activate, or anything else to cancel: ";
+			read venv_num;
+			if is_valid_whole_number ${venv_num} && [[ ${venv_num} -gt 0 ]] \
+					&& [[ ${venv_num} -le ${n_activators} ]]; then
+				poetry_activate_venv "${activators[$((venv_num-1))]}";
+			else
+				return 0;
+			fi
+			;;
+	esac
+
+}
+
+poetry_activate_venv(){      # Activate a Python-Poetry virtual environment
+	local activator="${1}";  # by running the specified /activate file
+	. "${activator}";
+	local project="${activator#*virtualenvs/}";
+	project="${project%-????????-*}";
+	local project_dir="${HOME}/${project}";
+	if [[ "$(ls -d ${project_dir} | wc -l)" -eq 1 ]]; then
+		cd ${project_dir};
+	fi
+}
+
 recall() {  # Search through my entire command history
 
 	# Default values for input arguments
