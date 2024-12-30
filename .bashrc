@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Greg Conan's .bashrc startup script for login shells
-# Updated 2024-12-21
+# Updated 2024-12-30
 
 # ~/.bashrc: executed by bash(1) for non-login shells.
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
