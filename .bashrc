@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Greg Conan's .bashrc startup script for login shells
-# Updated 2024-12-30
+# Updated 2025-06-06
 
 # ~/.bashrc: executed by bash(1) for non-login shells.
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
@@ -52,36 +52,6 @@ begin() {
 beginCisco() {
 	beginWSL;
 
-	# don't put duplicate lines in the history. See bash(1) for more options
-	# ... or force ignoredups and ignorespace
-	# HISTCONTROL=  #ignoredups:ignorespace
-
-	# append to the history file, don't overwrite it
-	# shopt -s histappend
-
-	# for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
-	# HISTSIZE=5000
-	# HISTFILESIZE=10000000
-
-	# Path to file to store history in 
-	# HISTORY_FILE="/home/${USERNAME}/.history.txt";
-
-	# check the window size after each command and, if necessary,
-	# update the values of LINES and COLUMNS.
-	# shopt -s checkwinsize
-
-	# If set, the pattern "**" used in a pathname expansion context will
-	# match all files and zero or more directories and subdirectories.
-	# shopt -s globstar
-
-	# make less more friendly for non-text input files, see lesspipe(1)
-	# [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
-
-	# set variable identifying the chroot you work in (used in the prompt below)
-	# if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
-	# 	debian_chroot=$(cat /etc/debian_chroot)
-	# fi
-
 	# Activate conda environment
 	initconda data-broker;
 
@@ -126,7 +96,7 @@ beginWSL() {
         # Constants: Paths to utilities used by multiple functions
 	alias cmd="cmd.exe";
 	alias slurm="slurmd";
-	alias read_dir="~/read_dir.pl"
+	alias read_dir="~/Code/read_dir.pl"
 
 	# Conda constants
 	export CONDA_DIR="/home/${USERNAME}/miniconda3";  # "/mnt/c/ProgramData/miniconda3";
@@ -155,7 +125,7 @@ condense_file() {  # Convert an entire file's worth of code into one line
 	local delim_long_end;
 
 	# Default values for input arguments
-	local output_file='; ';  # -o
+	local output_file="";  # -o
 	local input_file="";    # -f
 
 	# File extensions of all file types this function can support
@@ -206,7 +176,9 @@ Required Paths:
 	fi
 
 	# Clear output file
-	truncate -s 0 $output_file;
+	if [ "" != "${output_file}" ]; then
+		truncate -s 0 $output_file;
+	fi
 
 	# Set/validate comment delimiters
 	if [[ ${input_file} = *".js" ]]; then
@@ -258,8 +230,14 @@ Required Paths:
 	done < ${input_file}
 
 	# Write the now-condensed string to the output file
-	echo "${fullstr}" > ${output_file};
-	echo "Condensed contents of ${input_file} and wrote them to ${output_file} as one line.";
+	if [ "${output_file}" = "" ]; then
+		echo ${fullstr};
+	elif [ "${output_file}" = "clip.exe" ]; then
+		echo ${fullstr} | ${output_file};
+	else
+		echo "${fullstr}" > ${output_file};
+		echo "Condensed contents of ${input_file} and wrote them to ${output_file} as one line.";
+	fi
 }
 
 remove_inline_JS_comment_from() {
@@ -326,10 +304,6 @@ remove_inline_JS_comment_from() {
 			echo -n "${line}";
 		fi
 	fi
-}
-
-trim_whitespace_from() {
-	echo -n "$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'<<<"${@}")";
 }
 
 common_lines() {  # Only show lines present in both files. Opposite of `diff`
@@ -525,6 +499,40 @@ get_n_sacct_jobs() {
 	echo "$act_txt" | grep $title | grep -v -F .ba+ | grep -v -F .ex+ | grep -v -F .b+ | grep -v -F .e+ | grep -v -F .0 | wc -l
 }
 
+git_diff_save() {  # Save the `git diff` of the latest changes to a text file
+	datetime;  # Set 'today' variable to current date in ISO format
+
+	# Get staged and non-staged diffs by default
+	local diff_txt="$(git diff)
+$(git diff --staged)";
+
+	# Find directory to save diffs into
+	local git_root_dir=$(git rev-parse --show-toplevel);
+	local prefix="delete-this-git-diff";
+	local diff_dir="${git_root_dir}/${prefix}";
+
+	# Output file path depends on whether all diffs are in a dir together;
+	# if not, then prefix the filename & save to git project root dir
+	local outfpath;
+	if [ -d ${diff_dir} ]; then
+		outfpath="${diff_dir}/${today}.txt";
+	else
+		outfpath="${git_root_dir}/${prefix}-${today}.txt";
+	fi
+
+	# Remove leading/trailing blank lines and write diff to output file
+	# echo "Writing $(echo "${diff_txt}" | wc -l) lines to ${outfpath}";
+	# if [ -f ${outfpath} ]; then
+	# 	rm ${outfpath};
+	# fi
+	echo "$(trim_whitespace_from "${diff_txt}")" > ${outfpath};
+	if [ "$(head -n 1 ${outfpath})" = "" ]; then 
+		diff_txt=$(cat ${outfpath});
+		echo -n "${diff_txt}"  > ${outfpath};
+	# 	head -n -1 ${outfpath} > ${outfpath};
+	fi
+}
+
 has_type() {  # Return 0 if the input ${1} is something with a type; else return 1
 	type "${1}" >/dev/null 2>&1; return ${?};
 }
@@ -679,6 +687,32 @@ join_by() {  # Taken from stackoverflow.com/a/17841619/21206695
 	echo "$*";
 }
 
+latest_git_version() {  # Find the most recent Git version number tag
+	# List all git tags, assuming 1 "v#.#.#" per line
+	local tags="$(git tag -l)";
+       	
+	# Remove the initial 'v'
+	local tag_nums="$(echo "${tags}" | cut -c 2-)";
+       
+	# Split by version level/type
+	local latest;
+	local uniq_nums;
+	for level in 1 2 3; do  # At each level, from major to minor to patch,
+
+		# Get all of the (integer) version numbers
+		uniq_nums=$(echo "${tag_nums}" | cut -d '.' -f ${level} | uniq | sort -n);
+
+		# Find the highest (integer) version number
+		latest="${latest}$(echo "${uniq_nums}" | tail -n 1).";
+
+		# Filter out versions with lower version numbers
+		tag_nums="$(echo "${tag_nums}" | grep ${latest})";
+	done
+
+	echo v${latest%?};	
+
+}
+
 lines() {  # Count how many lines are in some file(s)
 	for eacharg in "$@"; do
 		if [ ! -f "${eacharg}" ]; then
@@ -696,8 +730,11 @@ list_empties() {
 	find ${@} -maxdepth 1 -empty;
 }
 
-lll() {  # Show how many files/dirs/etc are in the current (or given) directory
+lll() {  # Show how many files/dirs/etc are in a directory.
+	 # Always echo an integer: 1 for a file path, 0 for a nonexistent path
 	local dirpath;
+
+	# Check the current directory if none was given; else check the first
 	if [ $# -eq 0 ]; then
 		dirpath="$(pwd -P)";
 	else
@@ -705,11 +742,11 @@ lll() {  # Show how many files/dirs/etc are in the current (or given) directory
 	fi
 
 	# Use Feczko's readdir command to get the amount quickly
-	local amount=$(($(read_dir "${dirpath}" | wc -l) + 1));  # "${dirpath}" 2>&1 | wc -l
+	local amount=$(($(read_dir "${dirpath}" 2>/dev/null | wc -l) + 1));  # "${dirpath}" 2>&1 | wc -l
 
 	# For a small amount, just use LS, especially because using readdir cannot distinguish 0 and 1
 	if [ $amount -lt 3 ]; then
-		amount=$(l "${dirpath}" | wc -l);
+		amount=$(l "${dirpath}" 2>/dev/null | wc -l);
 	fi
 	echo $amount
 }
@@ -816,10 +853,12 @@ Options:
 			ip_to_show="${ip_to_show##* }"
 			;;
 		Linux)
-			for eachterm in $(route | cut -d ' ' -f 1); do
-				if [[ "${eachterm}" =~ ^[0-9.]+$ ]]; then
+			local ip_term="";
+			for eachterm in $(ip route); do
+				ip_term="${eachterm%/*}";
+				if [[ "${ip_term}" =~ ^[0-9.]+$ ]]; then
 					ip_to_show="${ip_to_show}
-${eachterm}"
+${ip_term}"
 				fi;
 			done
 			if [ "${ip_to_show}" = "" ]; then
@@ -860,9 +899,10 @@ Activates an existing Python-Poetry project and its virtual environment.";
 			return 0
 			;;
 	esac
+	local venv_name="${1//[!0-9a-zA-Z]}";
 	local virtual_envs="${HOME}/.cache/pypoetry/virtualenvs";
-	local venvs_found_msg="python-poetry virtual environment(s) called '${1}' found in the '${virtual_envs}' directory";
-	local activators=($(ls ${virtual_envs}/*${1}*-????????-py3.??/bin/activate));
+	local venvs_found_msg="python-poetry virtual environment(s) called '${venv_name}' found in the '${virtual_envs}' directory";
+	local activators=($(ls ${virtual_envs}/*${venv_name}*-????????-py3.??/bin/activate));
 	local n_activators=${#activators[@]};
 	case ${n_activators} in
 		0)
@@ -900,6 +940,50 @@ poetry_activate_venv(){      # Activate a Python-Poetry virtual environment
 	if [[ "$(ls -d ${project_dir} | wc -l)" -eq 1 ]]; then
 		cd ${project_dir};
 	fi
+}
+
+poetry_commit_tag() {
+	# local git_root_dir="$(git rev-parse --show-toplevel)";
+	# local old_tag="$(git tag -l | tail -n 1)";
+	local poetry_version="v$(poetry version -s)";
+	git add pyproject.toml;
+	git commit -m "${poetry_version}";
+	git tag "${poetry_version}";
+	git push origin main:main --tags;
+}
+
+poetry_new_version() {
+	# Local vars
+	local git_root_dir;
+	local poetry_file;
+	local updated_contents;
+
+	# If latest git tag matches current poetry version, then increment poetry version
+	local old_tag="$(latest_git_version)";  # Latest saved git tag
+	old_tag="${old_tag#*v}";  # Remove initial 'v' before version number
+	local poetry_version="$(poetry version -s)";  # Current poetry version
+	if [ "${old_tag}" = "${poetry_version}" ]; then
+
+		# Increment poetry version, assuming the lowest-level version update
+		poetry_version="${poetry_version%.*}.$((${poetry_version##*.}+1))";
+
+	        # Find Poetry project TOML file
+	 	git_root_dir="$(git rev-parse --show-toplevel)";
+	        poetry_file="${git_root_dir}/pyproject.toml";
+
+		# Update the version tag in the Poetry project YAML file
+		# by replacing the first occurrence in the file
+		updated_contents="$(sed "0,/${old_tag}/s/${old_tag}/${poetry_version}/" ${poetry_file})";
+		echo "${updated_contents}" > ${poetry_file};
+	fi
+
+	poetry_commit_tag;
+}
+
+poetry_env_name() {
+	local env_path="$(poetry env info -p)";
+	env_path="${env_path##*/}";
+	echo ${env_path%%-*};
 }
 
 recall() {  # Search through my entire command history
@@ -1096,7 +1180,11 @@ status(){
 		"$(get_n_sacct_jobs "$act_txt" COMPLETED)";
 }
 
-# strip_lines() {	echo "$@" | sed -e '/^$/d' }
+# strip_lines() {  # Remove leading and trailing empty (blank or whitespace-only) lines
+	#echo "$@" | sed -e '/^$/d'
+	# echo -n "$@" | sed -z -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba' -e '}' | sed -z '${/^[[:space:]]*$/d;}' | sed -z '${/^$/d}' | sed ':a;/^[ \n]*$/{$d;N;ba}';
+	# echo -n "$@"  | sed -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba' -e '}' | sed -z 's/[[:blank:]]\{1,\}$//'
+# }
 
 timeit() {  # Check how long a command takes to run on average with nanosecond precision
 	local n_loops=1;
@@ -1136,6 +1224,10 @@ timeit_once() {
 	local starttime=$(date +"%s.%N");
 	${@} > /dev/null;
 	echo "$(date +"%s.%N")-${starttime}" | bc;   
+}
+
+trim_whitespace_from() {
+        echo -n "$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'<<<"${@}")";
 }
 
 trim_zeroes() {
